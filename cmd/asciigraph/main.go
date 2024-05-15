@@ -24,15 +24,28 @@ var (
 	enableRealTime     bool
 	realTimeDataBuffer int
 	fps                float64 = 24
-	seriesColors       []asciigraph.AnsiColor
-	seriesLegends      []string
-	captionColor       asciigraph.AnsiColor
-	axisColor          asciigraph.AnsiColor
-	labelColor         asciigraph.AnsiColor
-	lowerBound              = math.Inf(1)
-	upperBound              = math.Inf(-1)
-	delimiter               = ","
-	seriesNum          uint = 1
+	read               string
+	seriesColors       = []asciigraph.AnsiColor{
+		asciigraph.Black,
+		asciigraph.Red,
+		asciigraph.Blue,
+		asciigraph.Green,
+		asciigraph.DarkRed,
+		asciigraph.DarkBlue,
+		asciigraph.DarkGreen,
+		asciigraph.LightBlue,
+		asciigraph.LightGreen,
+	}
+	seriesLegends         []string
+	seriesLegendsColumns  bool = false
+	seriesLegendsColumnsP bool = false
+	captionColor          asciigraph.AnsiColor
+	axisColor             asciigraph.AnsiColor
+	labelColor            asciigraph.AnsiColor
+	lowerBound                 = math.Inf(1)
+	upperBound                 = math.Inf(-1)
+	delimiter                  = ","
+	seriesNum             uint = 1
 )
 
 func main() {
@@ -43,6 +56,7 @@ func main() {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "%s expects data points from stdin. Invalid values are logged to stderr.\n", os.Args[0])
 	}
+	flag.StringVar(&read, "read", "", "read from file instead of stdin")
 	flag.UintVar(&height, "h", height, "`height` in text rows, 0 for auto-scaling")
 	flag.UintVar(&width, "w", width, "`width` in columns, 0 for auto-scaling")
 	flag.UintVar(&offset, "o", offset, "`offset` in columns, for the label")
@@ -92,6 +106,7 @@ func main() {
 		}
 		return nil
 	})
+	flag.BoolVar(&seriesLegendsColumns, "slc", false, "read series legends from csv header")
 
 	flag.Float64Var(&lowerBound, "lb", lowerBound, "`lower bound` set the minimum value for the vertical axis (ignored if series contains lower values)")
 	flag.Float64Var(&upperBound, "ub", upperBound, "`upper bound` set the maximum value for the vertical axis (ignored if series contains larger values)")
@@ -106,7 +121,17 @@ func main() {
 		realTimeDataBuffer = int(width)
 	}
 
-	s := bufio.NewScanner(os.Stdin)
+	var s bufio.Scanner
+	if read != "" {
+		i, err := os.Open(read)
+		if err != nil {
+			fmt.Printf("Could not open %s: %e", read, err)
+			return
+		}
+		s = *bufio.NewScanner(i)
+	} else {
+		s = *bufio.NewScanner(os.Stdin)
+	}
 	s.Split(bufio.ScanLines)
 
 	nextFlushTime := time.Now()
@@ -116,6 +141,14 @@ func main() {
 	for s.Scan() {
 		line := s.Text()
 		points := strings.Split(line, delimiter)
+
+		if seriesLegendsColumns && !seriesLegendsColumnsP {
+			seriesNum = uint(len(points))
+			series = make([][]float64, seriesNum)
+			seriesLegends = points
+			seriesLegendsColumnsP = true
+			continue
+		}
 
 		if uint(len(points)) < seriesNum {
 			log.Fatal("number of series in the input data stream is less than the specified series number")
